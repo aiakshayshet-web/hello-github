@@ -1,7 +1,7 @@
 // Boardroom Live backend: serves app/ and proxies Claude so the API key never reaches the browser.
 //
 //   POST /api/turn     {system, messages}  -> NDJSON stream: {"type":"text","text":"..."} ... {"type":"done"}
-//   POST /api/minutes  {prompt}            -> minutes JSON
+//   POST /api/json     {prompt}            -> the reply parsed as JSON (minutes, and every Roast-mode step)
 //   GET  /api/health                       -> {"llm": true|false, "mode": "live"|"fake"|"off"}
 //
 // Env: ANTHROPIC_API_KEY (or any credential the SDK resolves), PORT (8080), BOARD_MODEL (claude-opus-5-5),
@@ -25,22 +25,14 @@ const MIME = {
 
 const LIMITS = { bodyBytes: 512 * 1024, messages: 60, contentChars: 20000, systemChars: 20000, promptChars: 80000 };
 
-const MINUTES_SCHEMA = {
-  type: 'object', additionalProperties: false,
-  required: ['title', 'summary', 'decisions', 'actions', 'risks', 'openQuestions'],
-  properties: {
-    title: { type: 'string' },
-    summary: { type: 'string' },
-    decisions: { type: 'array', items: { type: 'string' } },
-    actions: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['task', 'owner', 'due', 'priority'],
-      properties: { task: { type: 'string' }, owner: { type: 'string', enum: ['Founder', 'Elena', 'Marcus', 'Devon'] },
-        due: { type: 'string' }, priority: { type: 'string', enum: ['High', 'Medium', 'Low'] } } } },
-    risks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['risk', 'likelihood', 'impact', 'mitigation', 'raisedBy'],
-      properties: { risk: { type: 'string' }, likelihood: { type: 'integer', enum: [1, 2, 3] }, impact: { type: 'integer', enum: [1, 2, 3] },
-        mitigation: { type: 'string' }, raisedBy: { type: 'string', enum: ['Founder', 'Elena', 'Marcus', 'Devon'] } } } },
-    openQuestions: { type: 'array', items: { type: 'string' } },
-  },
-};
+// Pull the JSON object out of a reply that may carry code fences or a sentence around it.
+export function extractJson(text) {
+  const t = String(text || '').replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  try { return JSON.parse(t); } catch {}
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch {} }
+  const e = new Error('reply was not JSON'); e.code = 'invalid_json'; e.text = String(text || ''); throw e;
+}
 
 /* ---------- request validation (pure, exported for tests) ---------- */
 export class InputError extends Error {}
@@ -59,7 +51,7 @@ export function validateTurn(body) {
   return { system, messages: clean };
 }
 
-export function validateMinutes(body) {
+export function validateJsonRequest(body) {
   if (!body || typeof body.prompt !== 'string' || !body.prompt.trim() || body.prompt.length > LIMITS.promptChars) throw new InputError('prompt must be a non-empty string');
   return { prompt: body.prompt };
 }
@@ -93,21 +85,50 @@ async function streamTurn(client, { system, messages }, res, signalClosed) {
   res.write(JSON.stringify(stop === 'refusal' ? { type: 'error', code: 'refused' } : { type: 'done', stop_reason: stop }) + '\n');
 }
 
-async function writeMinutes(client, { prompt }) {
+async function askJson(client, { prompt }) {
   const r = await client.beta.messages.create({
     model: MODEL,
     max_tokens: 16000,
     betas: [FALLBACK_BETA],
     fallbacks: 'default',
-    output_config: { effort: 'medium', format: { type: 'json_schema', schema: MINUTES_SCHEMA } },
+    output_config: { effort: 'medium' },
     messages: [{ role: 'user', content: prompt }],
   });
   if (r.stop_reason === 'refusal') { const e = new Error('refused'); e.code = 'refused'; throw e; }
-  const text = r.content.filter(b => b.type === 'text').map(b => b.text).join('');
-  return JSON.parse(text);
+  return extractJson(r.content.filter(b => b.type === 'text').map(b => b.text).join(''));
 }
 
 /* ---------- offline stand-in: canned board replies, no network ---------- */
+const FAKE_SEATS = {
+  Elena: { scores: [[8, 4, 3], [8, 5, 3], [8, 4, 2]], spoken: ['Option A. Hauliers feel this pain every week and will tell each other about a fix.', 'Marcus, the tech worry is real, but nobody pays for perfect architecture. I move nowhere.', 'Endorse. Get three paying hauliers before you polish anything.'] },
+  Marcus: { scores: [[6, 7, 3], [7, 5, 3], [7, 4, 3]], spoken: ['I lean B. Operators have the systems and the budget, and the integration is the hard part.', 'Devon, your cash point lands. A is cheaper to test, so I move from B to A.', 'Endorse with an amendment: no hazardous-goods automation in the pilot.'] },
+  Devon: { scores: [[7, 3, 5], [8, 3, 4], [8, 3, 3]], spoken: ['A, carefully. Two thousand pounds and three weeks gets you a measurable pilot.', 'Elena is right on demand. My condition is a hard stop if nobody pays by week six.', 'Endorse. Watch the cash, not the praise.'] },
+};
+function fakeJson(prompt) {
+  const p = String(prompt);
+  if (p.includes('into the council brief')) return {
+    decision: 'Which side Freight AI should start on', business: 'Pre-revenue freight booking tool', resources: '20 hours a week, about £3,000', success: 'A paying pilot within six months', lean: 'Hauliers',
+    options: [{ label: 'Hauliers first' }, { label: 'Ferry operators first' }, { label: "Don't do it", statusQuo: true }], assumptions: ['Savings cover year-one costs'], missing: [],
+    weights: { elena: { weight: 3, reason: 'Which side wants it is a demand question' }, marcus: { weight: 2, reason: 'Integration risk' }, devon: { weight: 3, reason: 'Cash and founder time' } } };
+  const round = /ROUND (\d) OF 3/.exec(p);
+  const seat = /You are (Elena|Marcus|Devon),/.exec(p);
+  if (round && seat) {
+    const r = +round[1], f = FAKE_SEATS[seat[1]], [A, B, C] = f.scores[r - 1];
+    const card = { scores: { A, B, C }, pillarScore: A, spoken: f.spoken[r - 1] };
+    if (r === 1) return { ...card, stance: 'Yes', call: 'Option A', confidence: 3, ruinRisk: 'none', door: 'two-way', why: ['Demand', 'Cost', 'Speed'], risk: 'Nobody pays', changeMind: 'An operator offers a paid pilot', thisWeek: 'Ten calls', question: 'Who pays first?' };
+    if (r === 2) return { ...card, stance: 'Yes', confidence: 4, ruinRisk: 'none', disagreeWith: seat[1] === 'Elena' ? 'marcus' : 'elena', rebuttal: 'Demand first', concede: 'Cash matters', moved: seat[1] === 'Marcus' ? 'yes, from B to A' : 'no', conditions: ['3 paying hauliers by week 6'] };
+    return { ...card, vote: seat[1] === 'Marcus' ? 'Endorse with amendment' : 'Endorse', finalScore: 8, amendment: seat[1] === 'Marcus' ? 'No hazardous-goods automation in the pilot' : '', oneLine: 'Charge from day one.' };
+  }
+  if (p.includes('really fighting about')) return { cruxes: [{ question: 'Who pays inside six months?', sides: [{ position: 'Hauliers', seats: ['Elena', 'Devon'] }, { position: 'Operators', seats: ['Marcus'] }] }], note: 'Demand versus budget.', spoken: 'Round two. The real fight is who pays inside six months: hauliers who decide fast, or operators with budgets.' };
+  if (p.includes('Write the draft resolution')) return { option: 'A', recommendation: 'Start with hauliers at £200 a month, run by hand first.', conditions: ['3 paying hauliers by week 6'], nextSteps: ['Book ten haulier calls this week'], cheapestTest: 'Run it by hand for three hauliers.', killCriteria: 'Fewer than 3 pay by week 6.', spoken: 'Draft resolution: hauliers first, two hundred pounds a month, run by hand. Round three, the vote.' };
+  if (p.includes('The vote is in')) return { call: 'Start with hauliers, run by hand, and charge from day one.', why: [{ point: 'Hauliers decide fast', seat: 'Elena' }, { point: 'Cheapest to test', seat: 'Devon' }, { point: 'Integration can wait', seat: 'Marcus' }], fights: ['Marcus moved to hauliers on cost.'], minority: { seat: 'Marcus', view: 'Operators hold the budget.', wouldHaveToBeTrue: 'An operator signs a paid pilot within 90 days.' }, conditions: ['3 paying hauliers by week 6'], nextSteps: ['Book ten haulier calls this week'], cheapestTest: 'Three hauliers by hand for two weeks.', killCriteria: 'Fewer than 3 pay by week 6.', revisit: 'In six weeks.', spoken: 'The verdict is go. Start with hauliers, run it by hand, and charge from day one. First step: book ten haulier calls this week.' };
+  return {
+    title: 'Demo board meeting', summary: 'A canned meeting from the offline demo mode. No model was called.',
+    decisions: ['Run a three-week pilot'], openQuestions: ['Who is the first customer?'],
+    actions: [{ task: 'Name the first customer segment', owner: 'Founder', due: 'This week', priority: 'High' }],
+    risks: [{ risk: 'Building the speech layer in-house', likelihood: 2, impact: 3, mitigation: 'Buy it for the pilot', raisedBy: 'Marcus' }] };
+}
+
 export function fakeClient() {
   const LINES = [
     'DEVON: Fair question. Rough numbers first: three weeks and about two thousand pounds gets you a pilot you can actually measure.',
@@ -129,13 +150,8 @@ export function fakeClient() {
         events.abort = () => { aborted = true; };
         return events;
       },
-      async create() {
-        return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify({
-          title: 'Demo board meeting', summary: 'A canned meeting from the offline demo mode. No model was called.',
-          decisions: ['Run a three-week pilot'], openQuestions: ['Who is the first customer?'],
-          actions: [{ task: 'Name the first customer segment', owner: 'Founder', due: 'This week', priority: 'High' }],
-          risks: [{ risk: 'Building the speech layer in-house', likelihood: 2, impact: 3, mitigation: 'Buy it for the pilot', raisedBy: 'Marcus' }],
-        }) }] };
+      async create({ messages }) {
+        return { stop_reason: 'end_turn', content: [{ type: 'text', text: '```json\n' + JSON.stringify(fakeJson(messages[0].content)) + '\n```' }] };
       },
     } },
   };
@@ -182,11 +198,15 @@ export function createServer({ client, mode = client ? 'live' : 'off', appDir = 
         return res.end();
       }
 
-      if (url === '/api/minutes' && req.method === 'POST') {
+      if (url === '/api/json' && req.method === 'POST') {
         if (!client) return sendJson(res, 503, { code: 'unavailable', error: 'No Claude credentials on the server' });
-        const input = validateMinutes(await readJson(req));
-        try { return sendJson(res, 200, await writeMinutes(client, input)); }
-        catch (e) { console.error('[minutes]', e.status || '', e.message); return sendJson(res, e.code === 'refused' ? 422 : (e.status === 429 ? 429 : 502), { code: e.code || errorCode(e) }); }
+        const input = validateJsonRequest(await readJson(req));
+        try { return sendJson(res, 200, await askJson(client, input)); }
+        catch (e) {
+          if (e.code !== 'invalid_json') console.error('[json]', e.status || '', e.message);
+          const status = e.code === 'refused' ? 422 : e.code === 'invalid_json' ? 502 : e.status === 429 ? 429 : 502;
+          return sendJson(res, status, { code: e.code || errorCode(e), text: e.code === 'invalid_json' ? e.text.slice(0, 4000) : undefined });
+        }
       }
 
       if (req.method !== 'GET' && req.method !== 'HEAD') return sendJson(res, 405, { error: 'method not allowed' });

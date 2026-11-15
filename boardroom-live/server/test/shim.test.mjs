@@ -64,7 +64,7 @@ test('sample maps HTTP errors to the artifact error codes', async () => {
 
 test('sample.json returns minutes or a coded error', async () => {
   let status = 200;
-  const { claude } = loadShim({ '/api/health': () => json(200, { llm: true }), '/api/minutes': () => json(status, status === 200 ? { title: 'T' } : { code: 'refused' }) });
+  const { claude } = loadShim({ '/api/health': () => json(200, { llm: true }), '/api/json': () => json(status, status === 200 ? { title: 'T' } : { code: 'refused' }) });
   const sample = await claude.use('sample');
   assert.deepEqual(await sample.json('prompt'), { title: 'T' });
   status = 422;

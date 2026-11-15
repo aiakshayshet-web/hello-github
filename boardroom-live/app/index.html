@@ -9,7 +9,7 @@
   --bg:#0d1315; --surface:#151d20; --tile:#1b2529; --tile-2:#222e33; --line:#2b383e;
   --fg:#e9eff1; --muted:#8c9da4; --dim:#5f7077;
   --elena:#ff8f61; --marcus:#63b6ff; --devon:#93d46d; --you:#d9c38a;
-  --rec:#ff5b5b; --danger:#e5484d;
+  --rec:#ff5b5b; --danger:#e5484d; --chair:#cdb98a;
   --display:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
   --body:"Manrope",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -152,6 +152,39 @@ th{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color
 
 @keyframes blink{0%,94%,100%{transform:scaleY(1)}97%{transform:scaleY(.1)}}
 .eye{transform-box:fill-box;transform-origin:center;animation:blink 4.8s infinite}
+/* roast mode */
+.app.roasting{grid-template-rows:auto 1fr auto auto auto}
+.council{border-radius:12px;background:var(--surface);border:1px solid var(--line);padding:8px 12px;display:grid;gap:6px;min-width:0}
+.c-head{display:flex;align-items:center;gap:10px;min-width:0}
+.c-phase{font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--chair);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.c-steps{display:flex;gap:4px;flex:1;justify-content:flex-end;min-width:60px}
+.c-steps i{flex:1;height:3px;border-radius:2px;background:var(--line);max-width:40px}
+.c-steps i.done{background:color-mix(in srgb,var(--chair) 50%,var(--line))}
+.c-steps i.now{background:var(--chair)}
+.c-open{height:30px;font-size:12px;padding:0 10px;flex:none}
+.c-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 16px}
+.c-opt{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:4px 8px;align-items:center;min-width:0;font-size:12px}
+.c-opt .id{font:600 11px var(--mono);color:var(--muted)}
+.c-opt .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c-opt .sc{font:500 12px var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.c-opt .bar{grid-column:1/-1;height:3px;background:var(--line);border-radius:2px;overflow:hidden}
+.c-opt .bar b{display:block;height:100%;width:0;background:var(--dim);transition:width .6s}
+.c-opt.lead .bar b{background:var(--chair)}
+.c-opt.lead .sc,.c-opt.lead .id{color:var(--chair)}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mode{border:1px solid var(--line);background:none;border-radius:12px;padding:10px 12px;text-align:left;cursor:pointer;display:grid;gap:3px}
+.mode b{font-size:14px}
+.mode span{font-size:12px;color:var(--muted);line-height:1.4}
+.mode.on{border-color:var(--chair);background:color-mix(in srgb,var(--chair) 10%,transparent)}
+@media (max-width:420px){.modes{grid-template-columns:1fr}}
+.vlabel{justify-self:start;font:700 13px var(--mono);letter-spacing:.06em;padding:6px 10px;border-radius:8px;border:1px solid currentColor}
+.vlabel.go{color:var(--devon)} .vlabel.cond{color:var(--you)} .vlabel.reshape{color:var(--elena)} .vlabel.no{color:var(--danger)}
+.vscores{display:flex;flex-wrap:wrap;gap:6px 14px;font:500 12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.vsec{display:grid;gap:6px}
+.vsec h3{margin:0;font:600 11px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.vlist{margin:0;padding-left:18px;display:grid;gap:6px;line-height:1.45}
+.vnote{font-size:12px;color:var(--muted);border-left:2px solid var(--chair);padding-left:10px;line-height:1.45}
+@media (prefers-reduced-motion:reduce){.c-opt .bar b{transition:none}}
 @media (prefers-reduced-motion:reduce){.eye,.live .rec,.mic.on::after,.spin{animation:none}}
 </style>
 
@@ -164,6 +197,11 @@ th{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color
   </header>
 
   <main class="stage" id="stage"></main>
+
+  <section class="council" id="council" aria-live="polite" hidden>
+    <div class="c-head"><span class="c-phase" id="cPhase">Roast</span><span class="c-steps" id="cSteps" aria-hidden="true"></span><button type="button" class="ghost c-open" id="cOpen" hidden>Verdict</button></div>
+    <div class="c-opts" id="cOpts"></div>
+  </section>
 
   <section class="captions" aria-live="polite">
     <span class="who" id="capWho" style="color:var(--muted)">Captions</span>
@@ -191,7 +229,11 @@ th{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color
     <div class="panel" id="roster"></div>
     <div class="kobox"><button type="button" class="ghost" id="koBtn">Get natural voices (100 MB, one time)</button><span class="note" id="koStatus">Open-source neural voices that run on your device. Best on a computer or a recent phone.</span></div>
     <p class="note" id="voiceNote">Pick a voice for each advisor to hear a sample. Voices marked ★ are the natural-sounding ones on this device.</p>
-    <label class="f" for="topic">What do you want the board's view on?</label>
+    <div class="modes" role="radiogroup" aria-label="Meeting type">
+      <button type="button" class="mode on" data-mode="discuss" role="radio" aria-checked="true"><b>Open discussion</b><span>Talk it through with the board, as long as you like.</span></button>
+      <button type="button" class="mode" data-mode="roast" role="radio" aria-checked="false"><b>Roast a decision</b><span>Three rounds, every option scored, then a verdict.</span></button>
+    </div>
+    <label class="f" for="topic" id="topicLabel">What do you want the board's view on?</label>
     <textarea id="topic" placeholder="e.g. I want to launch an AI tool that plans freight bookings for small UK hauliers. Is it worth building, and what should the MVP be?"></textarea>
     <div class="examples" id="examples"></div>
     <button class="primary" id="joinBtn">Join meeting</button>
@@ -207,6 +249,7 @@ th{font:500 11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color
 
 <!-- Self-hosted stand-ins for window.claude.use(...). Does nothing inside a claude.ai artifact. -->
 <script src="claude-shim.js"></script>
+<script src="roast.js"></script>
 <script type="module">
 (() => {
 const $ = id => document.getElementById(id);
@@ -229,6 +272,8 @@ const AGENTS = {
     room:'radial-gradient(45% 55% at 82% 25%, #e8ecd8 0%, transparent 70%), radial-gradient(40% 50% at 15% 45%, #5d7a4a 0%, transparent 70%), linear-gradient(180deg,#8e8f7f,#3f4436)',
     skin:'#d8a27c', hair:'#6b4a2b', hairShape:'side', shirt:'#4b7a35', beard:true}
 };
+// The Chair runs Roast mode. It speaks and captions but has no tile, so it is not in ORDER.
+AGENTS.chair = {name:'Chair', role:'Runs the council', color:'var(--chair)', voice:'buttery', pitch:0.95, rate:1.0, gender:'m'};
 const ORDER = ['elena','marcus','devon'];
 // Face landmarks in each 480x560 portrait (pixels)
 const PHOTOS = {
@@ -356,7 +401,7 @@ function frame(t){
 /* ---------- open-source neural voices (Kokoro, in the browser) ---------- */
 const KVOICES = { f:[['bf_emma','Emma'],['bf_isabella','Isabella'],['bf_alice','Alice'],['bf_lily','Lily']], m:[['bm_george','George'],['bm_lewis','Lewis'],['bm_daniel','Daniel'],['bm_fable','Fable']] };
 const KO = { worker:null, state:'off', rtf:null, ctx:null, q:[], src:null, cur:null,
-  voice:{elena:'bf_emma', marcus:'bm_george', devon:'bf_isabella'}, speed:{elena:1.05, marcus:1.0, devon:1.0}, previewId:0 };
+  voice:{elena:'bf_emma', marcus:'bm_george', devon:'bf_isabella', chair:'bm_daniel'}, speed:{elena:1.05, marcus:1.0, devon:1.0, chair:1.0}, previewId:0 };
 function koStatus(text){ const el=$('koStatus'); if(el) el.textContent=text; }
 function koStart(cachedOnly){
   if(KO.worker) return;
@@ -491,6 +536,7 @@ const speech = {
     clearTimeout(S.textTimer); S.textQ=[]; S.textBusy=false;
     S.lip = {}; ORDER.forEach(x=>talkVideo(x,false));
     setActive(null);
+    flushSpeechWaiters();
   }
 };
 let synthVoices=[];
@@ -521,7 +567,8 @@ function pickVoice(agent){
   if(!list.length) list=(synthVoices.length?synthVoices:speechSynthesis.getVoices()).slice().sort((x,y)=>voiceScore(y)-voiceScore(x));
   if(!list.length) return null;
   const same=ORDER.filter(x=>AGENTS[x].gender===a.gender);
-  return list[Math.min(same.indexOf(agent), list.length-1)];
+  const idx = ORDER.includes(agent) ? same.indexOf(agent) : list.length-1; // the Chair takes a voice the advisors are less likely to use
+  return list[Math.max(0, Math.min(idx, list.length-1))];
 }
 function isNaturalVoice(v){ return v && voiceScore(v)>=30; }
 function fillVoiceSelects(){
@@ -561,14 +608,15 @@ function linesDone(){
   closeLine();
   if(S.streaming) return;
   setActive(null);
-  if(!S.listening && S.live) status('idle','Your turn');
+  flushSpeechWaiters();
+  if(!S.listening && S.live && !RS.running) status('idle','Your turn');
 }
 
 /* ---------- realistic 3D heads ---------- */
 const HEADS = {};
 let AUDIO = null;
-const msPerChar = {elena:62, marcus:64, devon:62};
-const synthMs = {elena:64, marcus:66, devon:64};
+const msPerChar = {elena:62, marcus:64, devon:62, chair:62};
+const synthMs = {elena:64, marcus:66, devon:64, chair:64};
 function estimateMs(agent, text){
   const pauses = (text.match(/[,;:]/g)||[]).length*180 + (text.match(/[.?!]/g)||[]).length*320;
   let ms = text.length*msPerChar[agent] + pauses;
@@ -867,6 +915,11 @@ async function runTurn(extraUser){
 }
 
 function send(text){
+  if(RS.awaitFacts){ S.transcript.push({who:'you', text, t:Date.now()}); caption('you', text); answerFacts(text); return; }
+  if(RS.running){
+    S.transcript.push({who:'you', text, t:Date.now()}); caption('you', text);
+    RS.notes.push(text); banner('Noted. The council will weigh that in the next round.', 4000); return;
+  }
   S.transcript.push({who:'you', text, t:Date.now()});
   caption('you', text);
   let content = `Founder: ${text}`;
@@ -898,6 +951,7 @@ function buildPrejoin(){
   $('examples').querySelectorAll('.ex').forEach(b=>b.onclick=()=>{ $('topic').value=b.textContent; $('topic').focus(); });
 }
 $('joinBtn').onclick = () => {
+  if(RS.mode==='roast' && !$('topic').value.trim()){ banner('Type the decision you want roasted first: the options, your numbers, and which way you lean.', 6000); $('topic').focus(); return; }
   S.topic = $('topic').value.trim();
   $('prejoin').hidden = true;
   S.live = true; S.startAt = Date.now(); $('app').classList.add('live');
@@ -908,6 +962,7 @@ $('joinBtn').onclick = () => {
   ORDER.forEach(k=>{ const v=tiles[k].vid; if(v && v.src){ v.play().then(()=>v.pause()).catch(()=>{}); } });
   // prime speech output from this click
   if(S.speechMode==='synth'){ try{ speechSynthesis.speak(new SpeechSynthesisUtterance('')); }catch(_){} }
+  if(RS.mode==='roast'){ $('meetTitle').textContent = 'Advisory board · Roast'; startRoast(S.topic); return; }
   runTurn('(The founder has just joined the call.) Open the meeting: DEVON welcomes them in one short sentence and restates the topic in her own words; ELENA then asks one sharp framing question. Two turns only.');
 };
 
@@ -919,6 +974,7 @@ function transcriptText(){
 let lastMinutes = null;
 $('endBtn').onclick = async () => {
   if(!S.live) return;
+  if(RS.running || RS.awaitFacts){ RS.cancelled = true; RS.running = false; RS.awaitFacts = false; }
   interrupt();
   if(S.listening && S.caps.dictation) S.caps.dictation.stop().catch(()=>{});
   S.pendingSend=false;
@@ -972,10 +1028,203 @@ function renderMinutes(m){
   $('dlBtn').onclick=async()=>{ try{ await S.caps.downloads.save({filename:'board-minutes.md', data:minutesMd(m,risks)}); banner('Minutes saved.'); }catch(e){ if(e.code!=='declined') banner('The file could not be saved here. Use Copy instead.'); } };
   $('copyBtn').onclick=()=>{ navigator.clipboard.writeText(minutesMd(m,risks)).then(()=>banner('Minutes copied.',2500)).catch(()=>banner('Copy is blocked in this view.')); };
 }
-function minutesMd(m,risks){
+function minutesMd(m,risks){ return minutesMdBase(m,risks) + (RS.md ? '\n\n---\n\n' + RS.md + '\n' : ''); }
+function minutesMdBase(m,risks){
   const L=['','Low','Med','High'];
   return `# ${m.title||'Board meeting'}\n\n_${new Date(S.startAt).toLocaleString('en-GB')} · Topic: ${S.topic||'Open discussion'}_\n\n## Summary\n${m.summary||''}\n\n## Decisions\n${(m.decisions||[]).map(d=>`- ${d}`).join('\n')||'- None recorded'}\n\n## Action points\n| Action | Owner | When | Priority |\n|---|---|---|---|\n${(m.actions||[]).map(a=>`| ${a.task} | ${a.owner} | ${a.due} | ${a.priority} |`).join('\n')}\n\n## Risks\n| # | Risk | Likelihood | Impact | Mitigation | Raised by |\n|---|---|---|---|---|---|\n${risks.map(r=>`| ${r.n} | ${r.risk} | ${L[r.l]} | ${L[r.im]} | ${r.mitigation} | ${r.raisedBy||''} |`).join('\n')}\n\n## Open questions\n${(m.openQuestions||[]).map(d=>`- ${d}`).join('\n')||'- None'}\n\n## Transcript\n${transcriptText()}\n`;
 }
+
+/* ---------- roast mode: the Roast Room council protocol, run by this board ---------- */
+const RR = window.RoastRoom;
+const RS = { mode:'discuss', running:false, cancelled:false, awaitFacts:false, phase:'', topic:'', notes:[], R:null, V:null, text:null, md:'' };
+const ROAST_EXAMPLES = [
+  "Should Freight AI start with hauliers or ferry operators? 20 hours a week, about £3k, and I need a paying pilot within six months. Leaning hauliers.",
+  "Raise my coaching price from £2,000 to £3,500 for everyone, for new clients only, or keep it? 15 clients, 50% close rate, £40k in the bank.",
+  "Quit my job now to build my startup full time, or keep it for another 12 months? £1.2k MRR, £18k savings."
+];
+S.speechWaiters = [];
+function flushSpeechWaiters(){ S.speechWaiters.splice(0).forEach(f=>f()); }
+function speakLines(lines){
+  lines = lines.filter(l=>l && l.text);
+  if(!lines.length || RS.cancelled) return Promise.resolve();
+  const turn = ++S.turnId;
+  return new Promise(resolve=>{
+    let done=false, timer=0;
+    const finish=()=>{ if(done) return; done=true; clearTimeout(timer); resolve(); };
+    S.speechWaiters.push(finish);
+    const total = lines.reduce((a,l)=>a+estimateMs(l.agent,l.text),0);
+    timer = setTimeout(finish, total*2 + 8000); // never let a stuck voice stall the council
+    lines.forEach((l,i)=>speech.enqueue(`r${turn}-${i}-${l.agent}`, l.agent, l.text));
+  });
+}
+const chairSay = text => speakLines([{agent:'chair', text}]);
+const halt = () => { if(RS.cancelled) throw Object.assign(new Error('cancelled'), {code:'cancelled'}); };
+async function askJson(prompt){
+  const sample = S.caps.sample;
+  if(!sample) throw Object.assign(new Error('Claude is not available here'), {code:'unavailable'});
+  try{ return await sample.json(prompt, {modelTier:'default'}); }
+  catch(e){ if(e && e.code==='invalid_json') return await sample.json(prompt, {modelTier:'default'}); throw e; }
+}
+
+const PHASES = [['brief','Brief'],['r1','Round 1 of 3 · Opening positions'],['r2','Round 2 of 3 · Debate'],['r3','Round 3 of 3 · Vote'],['verdict','Verdict']];
+function latestScores(){
+  const R=RS.R; if(!R) return null;
+  if(RS.V) return RS.V.scores;
+  const ids=R.brief.options.map(o=>o.id);
+  for(const r of [3,2,1]) if(R.rounds[r] && Object.keys(R.rounds[r]).length) return RR.optionScores(R.rounds[r], R.brief.weights, ids).scores;
+  return null;
+}
+function renderCouncil(){
+  const R=RS.R, idx=Math.max(0, PHASES.findIndex(p=>p[0]===RS.phase));
+  let label = RS.awaitFacts ? 'Roast · The Chair needs a few facts' : `Roast · ${(PHASES.find(p=>p[0]===RS.phase)||PHASES[0])[1]}`;
+  if(RS.phase==='cruxes') label='Roast · Chair names the cruxes';
+  if(RS.phase==='draft') label='Roast · Draft resolution';
+  if(RS.V && RS.phase==='verdict') label=`Roast · Verdict: ${RS.V.label}`;
+  $('cPhase').textContent = label;
+  $('cSteps').innerHTML = PHASES.map((p,i)=>`<i class="${i<idx?'done':i===idx?'now':''}"></i>`).join('');
+  $('cOpen').hidden = !RS.md;
+  if(!R){ $('cOpts').innerHTML = '<span class="c-opt"><span class="lb" style="color:var(--muted)">The Chair is reading your decision…</span></span>'; return; }
+  const sc = latestScores() || {};
+  const lead = Object.entries(sc).filter(([,v])=>v!==null).sort((a,b)=>b[1]-a[1])[0];
+  $('cOpts').innerHTML = R.brief.options.map(o=>{
+    const v=sc[o.id], isLead = lead && lead[0]===o.id;
+    return `<div class="c-opt${isLead?' lead':''}" title="${esc(o.label)}"><span class="id">${o.id}</span><span class="lb">${esc(o.label)}</span><span class="sc">${v===null||v===undefined?'–':v.toFixed(1)}</span><span class="bar"><b style="width:${v==null?0:v*10}%"></b></span></div>`;
+  }).join('');
+}
+const labelClass = l => l==='GO'?'go' : l==='GO WITH CONDITIONS'?'cond' : l==='RESHAPE'?'reshape' : 'no';
+function showVerdict(){
+  const R=RS.R, V=RS.V, T=RS.text||{}; if(!V) return;
+  const ov=$('minutesOv'), card=$('minutesCard'); ov.hidden=false;
+  const li = a => a.map(x=>`<li>${esc(x)}</li>`).join('');
+  const scores = R.brief.options.map(o=>`<span>${o.id} ${V.scores[o.id]==null?'–':V.scores[o.id].toFixed(1)}</span>`).join('');
+  const conds = (T.conditions && T.conditions.length ? T.conditions : (R.draft && R.draft.conditions) || []);
+  card.innerHTML = `
+    <div class="eyebrow">Roast verdict · ${esc(R.brief.decision)}</div>
+    <span class="vlabel ${labelClass(V.label)}">${esc(V.label)}</span>
+    <h2>${esc(T.call || `Option ${V.recommended}: ${V.recommendedLabel}`)}</h2>
+    <div class="vscores">${scores}<span>Support ${V.support==null?'–':V.support}/10</span><span>Confidence ${V.confidence}/10</span><span>Spread ${V.spread}</span><span>${V.votes.endorse} endorse · ${V.votes.amend} amend · ${V.votes.dissent} dissent</span></div>
+    ${V.overrides.map(o=>`<p class="vnote">${esc(o)}</p>`).join('')}
+    ${T.why && T.why.length ? `<div class="vsec"><h3>Why the council landed here</h3><ul class="vlist">${T.why.map(w=>`<li>${esc(w.point)}${w.seat?` <span style="color:var(--muted)">(${esc(w.seat)})</span>`:''}</li>`).join('')}</ul></div>` : ''}
+    ${T.minority && T.minority.view ? `<div class="vsec"><h3>Minority report${T.minority.seat?' · '+esc(T.minority.seat):''}</h3><p>${esc(T.minority.view)}${T.minority.wouldHaveToBeTrue?` What would have to be true: ${esc(T.minority.wouldHaveToBeTrue)}`:''}</p></div>` : ''}
+    ${conds.length ? `<div class="vsec"><h3>Conditions</h3><ul class="vlist">${li(conds)}</ul></div>` : ''}
+    ${T.nextSteps && T.nextSteps.length ? `<div class="vsec"><h3>What to do next</h3><ol class="vlist">${li(T.nextSteps)}</ol></div>` : ''}
+    ${T.cheapestTest ? `<p><b style="color:var(--fg)">Cheapest test:</b> ${esc(T.cheapestTest)}</p>` : ''}
+    ${T.killCriteria ? `<p><b style="color:var(--fg)">Kill criteria:</b> ${esc(T.killCriteria)}</p>` : ''}
+    <p class="note">Elena, Marcus and Devon are fictional AI advisors. Keep talking to the board about the verdict, or end the call for minutes that include it.</p>
+    <div class="row"><button class="primary" id="vCopy" style="padding:0 18px">Copy verdict</button><button class="ghost" id="vDl" ${S.caps.downloads?'':'hidden'}>Download (.md)</button><button class="ghost" id="backBtn">Back to the call</button></div>`;
+  $('backBtn').onclick=()=>ov.hidden=true;
+  $('vCopy').onclick=()=>{ navigator.clipboard.writeText(RS.md).then(()=>banner('Verdict copied.',2500)).catch(()=>banner('Copy is blocked in this view. End the call to get minutes with the verdict.')); };
+  $('vDl').onclick=async()=>{ try{ await S.caps.downloads.save({filename:'roast-verdict.md', data:RS.md}); banner('Verdict saved.'); }catch(e){ if(e.code!=='declined') banner('The file could not be saved here. Use Copy instead.'); } };
+}
+$('cOpen').onclick = showVerdict;
+
+async function seatRound(round){
+  const R=RS.R, ids=R.brief.options.map(o=>o.id);
+  const cards = await Promise.all(RR.SEAT_ORDER.map(k=>askJson(RR.seatPrompt(round,k,R))
+    .then(c=>RR.normalizeCard(round,c,ids))
+    .catch(e=>{ if(e && (e.code==='not_granted'||e.code==='rate_limited')) throw e; return null; })));
+  halt();
+  R.rounds[round] = {};
+  RR.SEAT_ORDER.forEach((k,i)=>{ if(cards[i]) R.rounds[round][k]=cards[i]; });
+  if(Object.keys(R.rounds[round]).length < 2) throw Object.assign(new Error('Too few advisors answered'), {code:'round_failed'});
+  renderCouncil();
+  status('speaking', PHASES.find(p=>p[0]===RS.phase)[1]);
+  await speakLines(RR.SEAT_ORDER.filter(k=>R.rounds[round][k]).map(k=>({agent:k, text:R.rounds[round][k].spoken || R.rounds[round][k].call || ''})));
+  halt();
+}
+
+async function runCouncil(brief){
+  const R = RS.R = {brief, rounds:{}, notes:RS.notes, cruxes:null, draft:null, unanimous:false};
+  RS.phase='brief'; renderCouncil();
+  const lead = RR.SEAT_ORDER.filter(k=>brief.weights[k].weight===3).map(k=>RR.SEATS[k].name).join(' and ');
+  status('speaking','Chair');
+  await chairSay(`The council is in session. The decision: ${brief.decision} The options: ${brief.options.map(o=>`${o.id}, ${o.label}`).join('; ')}. ${lead} ${lead.includes(' and ')?'carry':'carries'} the most weight. Round one, opening positions.`);
+  halt();
+
+  RS.phase='r1'; renderCouncil(); status('thinking','Round 1 · Advisors are writing');
+  await seatRound(1);
+  R.unanimous = RR.unanimous(R.rounds[1], brief.options.map(o=>o.id));
+
+  RS.phase='cruxes'; renderCouncil(); status('thinking','Chair is naming the cruxes');
+  R.cruxes = RR.normalizeChair('cruxes', await askJson(RR.cruxPrompt(R))); R.cruxes.unanimous = R.unanimous; halt();
+  status('speaking','Chair');
+  await chairSay(R.cruxes.spoken || 'Round two. Here is what you are really fighting about.'); halt();
+
+  RS.phase='r2'; renderCouncil(); status('thinking','Round 2 · Advisors are writing');
+  await seatRound(2);
+
+  const interim = RR.computeVerdict({brief, rounds:{1:R.rounds[1], 2:R.rounds[2]}});
+  RS.phase='draft'; renderCouncil(); status('thinking','Chair is drafting the resolution');
+  R.draft = RR.normalizeChair('draft', await askJson(RR.draftPrompt(R, interim))); halt();
+  status('speaking','Chair');
+  await chairSay(R.draft.spoken || `Draft resolution: ${R.draft.recommendation} Round three, the vote.`); halt();
+
+  RS.phase='r3'; renderCouncil(); status('thinking','Round 3 · Advisors are voting');
+  await seatRound(3);
+
+  RS.V = RR.computeVerdict(R);
+  RS.phase='verdict'; renderCouncil(); status('thinking','Chair is writing the verdict');
+  RS.text = RR.normalizeChair('verdict', await askJson(RR.verdictPrompt(R, RS.V))); halt();
+  RS.md = RR.verdictMarkdown(R, RS.V, RS.text);
+  renderCouncil(); showVerdict();
+  status('speaking','Chair');
+  await chairSay(RS.text.spoken || `The verdict is ${RS.V.label}. ${RS.text.call}`);
+  RS.running=false; RS.mode='discuss';
+  // the call carries on as an open discussion, with the verdict as shared context
+  S.history.push({role:'user', content:`(The council has finished. Its verdict, for reference when the founder asks about it:)\n${RS.md.slice(0,6000)}`});
+  if(!S.listening) status('idle','Your turn');
+}
+
+function roastFailed(e){
+  RS.running=false; RS.awaitFacts=false;
+  if(RS.cancelled || (e && e.code==='cancelled')) return;
+  const code = e && e.code;
+  banner(code==='rate_limited' ? 'Claude is busy just now. Wait a moment, then start the roast again.'
+    : code==='not_granted' ? 'The council needs permission to use Claude. Allow it when asked, then start again.'
+    : code==='unavailable' ? 'Roast mode needs Claude, which this view cannot reach. Open the page in claude.ai.'
+    : 'The council could not finish that step. You can keep talking to the board.', 8000);
+  RS.mode='discuss'; RS.phase=''; $('cPhase').textContent='Roast · Stopped';
+  if(S.live) status('idle','Your turn');
+}
+
+async function startRoast(topic){
+  Object.assign(RS, {running:true, cancelled:false, awaitFacts:false, phase:'brief', topic, notes:[], R:null, V:null, text:null, md:''});
+  $('app').classList.add('roasting'); $('council').hidden=false; renderCouncil();
+  try{
+    status('thinking','Chair is writing the brief');
+    const brief = RR.normalizeBrief(await askJson(RR.briefPrompt(topic, '')), topic); halt();
+    if(brief.missing.length){
+      RS.awaitFacts=true; RS.running=false; renderCouncil();
+      status('speaking','Chair');
+      await chairSay(`Before the council starts, I need a few facts. ${brief.missing.join(' ')}`);
+      if(RS.awaitFacts) status('idle','Answer the Chair');
+      return;
+    }
+    await runCouncil(brief);
+  }catch(e){ roastFailed(e); }
+}
+async function answerFacts(text){
+  RS.awaitFacts=false; RS.running=true; renderCouncil();
+  try{
+    status('thinking','Chair is updating the brief');
+    const brief = RR.normalizeBrief(await askJson(RR.briefPrompt(RS.topic, text)), RS.topic); halt();
+    brief.missing = [];
+    await runCouncil(brief);
+  }catch(e){ roastFailed(e); }
+}
+
+function setMode(m){
+  RS.mode = m;
+  document.querySelectorAll('.mode').forEach(b=>{ const on=b.dataset.mode===m; b.classList.toggle('on',on); b.setAttribute('aria-checked', String(on)); });
+  const roast = m==='roast';
+  $('topicLabel').textContent = roast ? 'What decision should the council roast?' : "What do you want the board's view on?";
+  $('topic').placeholder = roast ? 'The decision, your options, your numbers (revenue, cash, hours), what success looks like, and which way you lean.' : 'e.g. I want to launch an AI tool that plans freight bookings for small UK hauliers. Is it worth building, and what should the MVP be?';
+  $('joinBtn').textContent = roast ? 'Join and start the roast' : 'Join meeting';
+  const ex = roast ? ROAST_EXAMPLES : EXAMPLES;
+  $('examples').innerHTML = ex.map(x=>`<button type="button" class="ex">${esc(x)}</button>`).join('');
+  $('examples').querySelectorAll('.ex').forEach(b=>b.onclick=()=>{ $('topic').value=b.textContent; $('topic').focus(); });
+}
+document.querySelectorAll('.mode').forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
 
 /* ---------- boot ---------- */
 buildStage(); buildPrejoin();

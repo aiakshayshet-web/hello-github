@@ -2,7 +2,7 @@
  * window.claude.use(name). Inside a claude.ai artifact the real window.claude exists and this file
  * does nothing, so the same index.html runs in both places.
  *
- *   sample     -> POST /api/turn (streamed NDJSON) and POST /api/minutes on this server
+ *   sample     -> POST /api/turn (streamed NDJSON) and POST /api/json on this server
  *   dictation  -> the browser's SpeechRecognition (Chrome, Edge, Safari)
  *   downloads  -> a normal <a download> link
  *   tts        -> null, so the page uses Kokoro or the browser's own voices
@@ -69,10 +69,11 @@
   }
 
   sample.json = async function (prompt) {
-    const res = await fetch('/api/minutes', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }) });
+    if (typeof prompt !== 'string') prompt = prompt.map(m => `${m.role.toUpperCase()}: ${m.content}`).join('\n\n');
+    const res = await fetch('/api/json', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt }) });
     let j = null;
     try { j = await res.json(); } catch (_) {}
-    if (!res.ok) throw err((j && j.code) || (res.status === 429 ? 'rate_limited' : 'upstream_error'), 'minutes failed');
+    if (!res.ok) throw err((j && j.code) || (res.status === 429 ? 'rate_limited' : 'upstream_error'), 'request failed', j && j.text ? { text: j.text } : undefined);
     return j;
   };
 

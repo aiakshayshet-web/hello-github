@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { createServer, fakeClient, validateTurn, validateMinutes, resolveStatic, hasCredentials, InputError, DEFAULT_APP_DIR } from '../server.mjs';
+import { createServer, fakeClient, validateTurn, validateJsonRequest, extractJson, resolveStatic, hasCredentials, InputError, DEFAULT_APP_DIR } from '../server.mjs';
 
 async function withServer(opts, fn) {
   const srv = createServer(opts);
@@ -23,7 +23,7 @@ test('validateTurn rejects bad input', () => {
     { system: 's', messages: Array.from({ length: 61 }, () => ({ role: 'user', content: 'x' })) }]) {
     assert.throws(() => validateTurn(bad), InputError);
   }
-  assert.throws(() => validateMinutes({ prompt: '' }), InputError);
+  assert.throws(() => validateJsonRequest({ prompt: '' }), InputError);
 });
 
 test('resolveStatic keeps requests inside the app folder', () => {
@@ -106,21 +106,34 @@ test('/api/turn rejects invalid JSON and bad shapes with 400', async () => {
   });
 });
 
-test('/api/minutes returns parsed minutes and asks for structured output', async () => {
+test('extractJson copes with fences and chatter, and flags non-JSON', () => {
+  assert.deepEqual(extractJson('```json\n{"a":1}\n```'), { a: 1 });
+  assert.deepEqual(extractJson('Here you go: {"a":{"b":2}} hope that helps'), { a: { b: 2 } });
+  assert.throws(() => extractJson('no json here'), e => e.code === 'invalid_json');
+});
+
+test('/api/json returns parsed JSON for minutes and roast steps', async () => {
   await withServer({ client: fakeClient() }, async base => {
-    const m = await (await post(base, '/api/minutes', { prompt: 'Write minutes' })).json();
+    const m = await (await post(base, '/api/json', { prompt: 'Write minutes' })).json();
     assert.equal(m.title, 'Demo board meeting');
-    assert.equal(m.actions[0].owner, 'Founder');
+    const brief = await (await post(base, '/api/json', { prompt: 'You are the Chair. Turn what the founder said into the council brief.' })).json();
+    assert.equal(brief.options.length, 3);
   });
   let seen;
   const spy = { beta: { messages: { async create(p) { seen = p; return { stop_reason: 'refusal', content: [] }; } } } };
   await withServer({ client: spy }, async base => {
-    const r = await post(base, '/api/minutes', { prompt: 'Write minutes' });
+    const r = await post(base, '/api/json', { prompt: 'Anything' });
     assert.equal(r.status, 422);
     assert.equal((await r.json()).code, 'refused');
   });
-  assert.equal(seen.output_config.format.type, 'json_schema');
   assert.equal(seen.fallbacks, 'default');
+  assert.equal(seen.output_config.effort, 'medium');
+  const chatty = { beta: { messages: { async create() { return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Sorry, no JSON today' }] }; } } } };
+  await withServer({ client: chatty }, async base => {
+    const r = await post(base, '/api/json', { prompt: 'x' });
+    assert.equal(r.status, 502);
+    assert.equal((await r.json()).code, 'invalid_json');
+  });
 });
 
 test('static files are served with the right types', async () => {

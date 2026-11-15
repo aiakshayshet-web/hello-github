@@ -175,3 +175,16 @@ Published as a private claude.ai artifact, "Boardroom Live" (version 10 at hando
 - **Still to do from §5:** ElevenLabs streaming TTS with timestamps, `getUserMedia` + streaming STT with VAD and barge-in
   (SpeechRecognition is Chrome/Edge/Safari only and has no true barge-in), auth and rate limiting before any public URL,
   persistence, and self-hosting the two jsDelivr imports (lip-sync timeline and onnxruntime-web).
+
+## 11. Roast mode (Roast Room council protocol)
+
+- `app/roast.js` (pure functions, `window.RoastRoom`): brief clean-up, card normalising, prompts for every step, weighted
+  scoring, verdict bands, ruin and one-way-door caps, unanimity check, and the Markdown report. 12 tests in
+  `server/test/roast.test.mjs`.
+- `index.html`: a mode switch on the join card, a tile-less **Chair** speaker (captions + voice, not in `ORDER`), a live
+  scoreboard row under the tiles, the verdict card, and `speakLines()`, which waits for the speech queue to drain
+  (resolved from `linesDone()` and `speech.stop()`, with a timeout so a stuck voice can't stall the council).
+- One full roast is 13 `sample.json` calls (brief, 3 × 3 seat cards, cruxes, draft, verdict). The seats in each round run in parallel.
+- Self-hosted: `/api/minutes` became the generic `/api/json`. `BOARD_FAKE=1` answers every roast step, so the full flow
+  runs offline. A full roast was run end to end in headless Chromium against it.
+- Not ported: Roast Room's real-person seats, their source "brains" and quote checking. The method is kept, the cast is not.
