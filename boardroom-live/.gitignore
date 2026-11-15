@@ -1,0 +1,2 @@
+app/kokoro/model.part*.wasm
+server/node_modules/
